@@ -14,6 +14,7 @@
 // Aufbau von kurse/daten (Schnittstelle zu Valuence):
 //   { quelle, stand, ohneKurs: [Ticker], aktien: { TICKER: {
 //       kurs, vortag, datum, anzahl, waehrung,       Kurs in USD, Schluss des Vortags, Handelstag (New York), Aktien in Mio.
+//       seit,                                        Tag des ersten Abrufs dieser Aktie; nur Meldungen ab diesem Tag werden eingefroren
 //       naechsteMeldung: { datum, zeit } | null,      nächster Termin für Quartalszahlen
 //       meldungen: { JJJJ-MM-TT: { zeit, kurs, anzahl, erfasst, pruefen } }   Schlusskurs vor der Meldung, eingefroren
 //   } } }
@@ -168,8 +169,10 @@ async function einLauf(ticker, vorher) {
     kurs, vortag: zahl(q.pc), datum: datum(q.t),
     anzahl: anzahl && anzahl > 0 ? anzahl : null,
     waehrung: typeof p.currency === 'string' ? p.currency : null,
+    seit: (vorher && vorher.seit) || HEUTE,
     naechsteMeldung: (vorher && vorher.naechsteMeldung) || null,
-    meldungen: aufheben(vorher && vorher.meldungen)
+    // Eintrag der ersten Skript-Fassung (ohne „seit“): ihre eingefrorenen Kurse können Meldungen vor der Beobachtung betreffen, sie entfallen
+    meldungen: vorher && !vorher.seit ? {} : aufheben(vorher && vorher.meldungen)
   };
 
   // Meldetermine: vergangene Tage prüfen (Kurs einfrieren), nächsten Termin merken
@@ -184,16 +187,17 @@ async function einLauf(ticker, vorher) {
   if (termine) {
     const n = termine.find((x) => x.date >= HEUTE);
     e.naechsteMeldung = n ? { datum: n.date, zeit: zeitVon(n.hour) } : null;
-    if (vorher) {                                        // erst einfrieren, wenn die Aktie schon einen Lauf lang beobachtet wird
-      termine.forEach((x) => {
-        if (e.meldungen[x.date] || x.date < tagPlus(HEUTE, -ZURUECK)) return;
-        const f = einfrieren(x, e);
-        if (!f) return;
-        e.meldungen[x.date] = f;
-        eingefroren.push(ticker + ' (' + x.date + ')');
-        if (f.pruefen) zuPruefen.push(ticker + ' (' + x.date + ')');
-      });
-    }
+    // Nur Meldungen, seit die Aktie beobachtet wird: der Stand in Valuence kann bei älteren schon die neuen Zahlen enthalten.
+    // Nach Börsenschluss am ersten Tag zählt noch (der Kurs davor ist der Schluss dieses Tages), vor Börsenstart nicht mehr.
+    termine.forEach((x) => {
+      if (e.meldungen[x.date] || x.date < tagPlus(HEUTE, -ZURUECK)) return;
+      if (zeitVon(x.hour) === 'amc' ? x.date < e.seit : x.date <= e.seit) return;
+      const f = einfrieren(x, e);
+      if (!f) return;
+      e.meldungen[x.date] = f;
+      eingefroren.push(ticker + ' (' + x.date + ')');
+      if (f.pruefen) zuPruefen.push(ticker + ' (' + x.date + ')');
+    });
   }
   return e;
 }
