@@ -1,0 +1,32 @@
+name: Kurse aktualisieren
+
+on:
+  schedule:
+    - cron: '30 22 * * 1-5'   # Montag bis Freitag um 22:30 UTC (23:30 bzw. 00:30 Uhr deutscher Zeit), nach US-Börsenschluss
+  workflow_dispatch:           # zusätzlich per Knopf startbar (Reiter Actions)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kurse                 # nie zwei Läufe gleichzeitig
+  cancel-in-progress: false
+
+jobs:
+  kurse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Kurse holen und in Supabase speichern
+        run: node scripts/kurse.mjs
+        env:
+          SUPABASE_URL: https://ouycyxqvsdshfpzxszcn.supabase.co
+          SUPABASE_KEY: sb_publishable_nJ8Ps0BfHcqXsQXyROgQxQ_fSeWBHUE
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+          VALUENCE_EMAIL: ${{ secrets.VALUENCE_EMAIL }}
+          VALUENCE_PASSWORD: ${{ secrets.VALUENCE_PASSWORD }}
